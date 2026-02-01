@@ -1,0 +1,17 @@
+{
+  "name": "樂齡用藥紀錄",
+  "short_name": "樂齡用藥",
+  "description": "長輩每日服藥提醒與紀錄工具",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f0fdfa",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/822/822143.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

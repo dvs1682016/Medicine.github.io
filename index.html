@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>樂齡用藥紀錄</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f0fdfa; /* 湖水綠背景 */
+            touch-action: manipulation;
+        }
+        .safe-area-bottom {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .pill-card {
+            transition: transform 0.1s;
+        }
+        .pill-card:active {
+            transform: scale(0.98);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-teal-50 text-slate-900">
+
+    <div id="app" class="max-w-md mx-auto min-h-screen flex flex-col relative shadow-xl bg-white">
+        
+        <!-- Header -->
+        <header class="bg-teal-600 text-white p-4 shadow-md sticky top-0 z-10">
+            <div class="flex justify-between items-center">
+                <h1 id="page-title" class="text-2xl font-bold flex items-center">
+                    <span class="mr-2">❤️</span> 樂齡用藥紀錄
+                </h1>
+                <div id="header-date" class="text-sm font-bold opacity-90"></div>
+            </div>
+            
+            <!-- 日期導航 -->
+            <div id="date-controls" class="mt-4 flex items-center justify-between bg-teal-700/50 rounded-xl p-2">
+                <button onclick="changeDate(-1)" class="p-2 w-12 text-center bg-teal-500/50 rounded-lg active:bg-teal-800 transition">
+                    <i class="fas fa-chevron-left text-lg"></i>
+                </button>
+                <div id="current-display-date" class="text-xl font-bold tracking-wide">2023-10-27</div>
+                <button onclick="changeDate(1)" class="p-2 w-12 text-center bg-teal-500/50 rounded-lg active:bg-teal-800 transition">
+                    <i class="fas fa-chevron-right text-lg"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 主內容區 -->
+        <main class="flex-grow p-4 pb-28">
+            <!-- 視圖: 每日 checklist -->
+            <section id="view-daily">
+                <div id="daily-list" class="space-y-4">
+                    <!-- 卡片動態生成 -->
+                </div>
+            </section>
+
+            <!-- 視圖: 藥品設定 -->
+            <section id="view-settings" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold border-l-4 border-teal-500 pl-3 text-slate-700">藥品清單管理</h2>
+                    <button onclick="openMedModal()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm active:scale-95 transition">
+                        <i class="fas fa-plus mr-1"></i> 新增藥品
+                    </button>
+                </div>
+                <div id="med-list" class="space-y-3">
+                    <!-- 設定項目動態生成 -->
+                </div>
+            </section>
+
+            <!-- 視圖: 資料管理 (匯入/匯出) -->
+            <section id="view-data" class="hidden">
+                <h2 class="text-xl font-bold border-l-4 border-teal-500 pl-3 mb-6 text-slate-700">資料備份與還原</h2>
+                
+                <div class="space-y-6">
+                    <div class="bg-teal-50 p-5 rounded-2xl border border-teal-100">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-file-export text-teal-600 text-2xl mr-3"></i>
+                            <h3 class="font-bold text-lg text-teal-800">匯出備份檔</h3>
+                        </div>
+                        <p class="text-slate-600 text-sm mb-4">將目前的藥品設定與服藥紀錄下載為 JSON 檔案，以便在改版或更換裝置時恢復資料。</p>
+                        <button onclick="exportData()" class="w-full bg-teal-600 text-white py-3 rounded-xl font-bold active:scale-95 transition">
+                            下載 JSON 備份檔
+                        </button>
+                    </div>
+
+                    <div class="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-file-import text-slate-600 text-2xl mr-3"></i>
+                            <h3 class="font-bold text-lg text-slate-700">匯入備份檔</h3>
+                        </div>
+                        <p class="text-slate-600 text-sm mb-4">選取之前儲存的 JSON 備份檔。<br><span class="text-rose-500 font-bold">注意：匯入將會完全覆蓋目前的現有資料！</span></p>
+                        <label class="block w-full text-center bg-slate-600 text-white py-3 rounded-xl font-bold cursor-pointer active:scale-95 transition">
+                            選擇檔案並匯入
+                            <input type="file" id="import-file" class="hidden" accept=".json" onchange="handleImport(event)">
+                        </label>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部導覽列 -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 shadow-[0_-5px_15px_rgba(0,0,0,0.05)] safe-area-bottom max-w-md mx-auto z-20">
+            <button onclick="toggleView('daily')" class="nav-btn flex flex-col items-center p-2 text-teal-600" id="nav-daily">
+                <i class="fas fa-calendar-check text-2xl mb-1"></i>
+                <span class="text-xs font-bold">每日用藥</span>
+            </button>
+            <button onclick="toggleView('settings')" class="nav-btn flex flex-col items-center p-2 text-slate-400" id="nav-settings">
+                <i class="fas fa-pills text-2xl mb-1"></i>
+                <span class="text-xs font-bold">藥品設定</span>
+            </button>
+            <button onclick="toggleView('data')" class="nav-btn flex flex-col items-center p-2 text-slate-400" id="nav-data">
+                <i class="fas fa-database text-2xl mb-1"></i>
+                <span class="text-xs font-bold">資料管理</span>
+            </button>
+        </nav>
+
+        <!-- Modal: 新增/編輯藥品 -->
+        <div id="med-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+                <div class="bg-slate-50 p-4 border-b flex justify-between items-center">
+                    <h3 class="font-bold text-lg text-slate-700">藥品資訊設定</h3>
+                    <button onclick="closeMedModal()" class="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-6 space-y-5">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-500 mb-2">藥品名稱</label>
+                        <input type="text" id="input-name" placeholder="例如：血壓藥" class="w-full border-2 border-slate-200 p-3 rounded-xl text-xl focus:border-teal-400 outline-none">
+                    </div>
+                    <div class="flex space-x-3">
+                        <div class="w-1/2">
+                            <label class="block text-sm font-bold text-slate-500 mb-2">每次劑量</label>
+                            <input type="number" id="input-qty" value="1" class="w-full border-2 border-slate-200 p-3 rounded-xl text-xl focus:border-teal-400 outline-none">
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-sm font-bold text-slate-500 mb-2">單位</label>
+                            <select id="input-unit" class="w-full border-2 border-slate-200 p-3 rounded-xl text-xl focus:border-teal-400 outline-none bg-white">
+                                <option>顆</option><option>粒</option><option>包</option><option>毫升</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex space-x-3">
+                        <div class="w-1/2">
+                            <label class="block text-sm font-bold text-slate-500 mb-2">服藥時機</label>
+                            <select id="input-timing" class="w-full border-2 border-slate-200 p-3 rounded-xl text-xl focus:border-teal-400 outline-none bg-white">
+                                <option>飯後</option><option>飯前</option><option>隨餐</option><option>睡前</option><option>空腹</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-sm font-bold text-slate-500 mb-2">每日次數</label>
+                            <select id="input-freq" class="w-full border-2 border-slate-200 p-3 rounded-xl text-xl focus:border-teal-400 outline-none bg-white">
+                                <option value="1">1次</option><option value="2">2次</option>
+                                <option value="3">3次</option><option value="4">4次</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-4 bg-slate-50 border-t flex space-x-3">
+                    <button onclick="closeMedModal()" class="flex-grow py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 active:bg-slate-100 transition">取消</button>
+                    <button onclick="saveMedication()" class="flex-grow py-4 bg-teal-600 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition">儲存藥品</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: 刪除確認 -->
+        <div id="delete-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-8">
+            <div class="bg-white rounded-3xl w-full max-w-xs overflow-hidden shadow-2xl text-center">
+                <div class="p-6">
+                    <div class="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-exclamation-triangle text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold text-xl mb-2 text-slate-800">確定要刪除嗎？</h3>
+                    <p class="text-slate-500">刪除後將無法恢復此藥品設定。</p>
+                </div>
+                <div class="flex border-t">
+                    <button onclick="closeDeleteModal()" class="w-1/2 py-4 font-bold text-slate-400 border-r active:bg-slate-50">取消</button>
+                    <button id="confirm-delete-btn" class="w-1/2 py-4 font-bold text-rose-500 active:bg-rose-50">刪除</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提示訊息 Toast -->
+        <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white px-8 py-3 rounded-full text-base font-bold opacity-0 transition-opacity pointer-events-none z-50 shadow-lg">
+            已成功
+        </div>
+    </div>
+
+    <script>
+        // --- 資料初始化 ---
+        let meds = JSON.parse(localStorage.getItem('elderly_meds')) || [];
+        let records = JSON.parse(localStorage.getItem('elderly_records')) || [];
+        
+        let currentDate = new Date();
+        let currentView = 'daily';
+        let editingId = null;
+        let pendingDeleteId = null;
+
+        window.onload = () => {
+            updateDateDisplay();
+            render();
+        };
+
+        function saveToStorage() {
+            localStorage.setItem('elderly_meds', JSON.stringify(meds));
+            localStorage.setItem('elderly_records', JSON.stringify(records));
+        }
+
+        // --- 視圖切換 ---
+        function toggleView(view) {
+            currentView = view;
+            
+            document.getElementById('view-daily').classList.add('hidden');
+            document.getElementById('view-settings').classList.add('hidden');
+            document.getElementById('view-data').classList.add('hidden');
+            
+            const navIds = ['nav-daily', 'nav-settings', 'nav-data'];
+            navIds.forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('text-teal-600');
+                el.classList.add('text-slate-400');
+            });
+
+            const activeNav = document.getElementById(`nav-${view}`);
+            activeNav.classList.remove('text-slate-400');
+            
+            if(view === 'daily') {
+                document.getElementById('view-daily').classList.remove('hidden');
+                activeNav.classList.add('text-teal-600');
+                document.getElementById('date-controls').classList.remove('hidden');
+            } else if(view === 'settings') {
+                document.getElementById('view-settings').classList.remove('hidden');
+                activeNav.classList.add('text-teal-600');
+                document.getElementById('date-controls').classList.add('hidden');
+            } else if(view === 'data') {
+                document.getElementById('view-data').classList.remove('hidden');
+                activeNav.classList.add('text-teal-600');
+                document.getElementById('date-controls').classList.add('hidden');
+            }
+            render();
+        }
+
+        // --- 日期邏輯 ---
+        function changeDate(days) {
+            currentDate.setDate(currentDate.getDate() + days);
+            updateDateDisplay();
+            render();
+        }
+
+        function updateDateDisplay() {
+            const options = { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' };
+            const dateStr = currentDate.toLocaleDateString('zh-TW', options);
+            document.getElementById('current-display-date').innerText = dateStr;
+        }
+
+        function getFormattedDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        // --- 畫面渲染 ---
+        function render() {
+            if (currentView === 'daily') renderDaily();
+            else if (currentView === 'settings') renderSettings();
+        }
+
+        function renderDaily() {
+            const list = document.getElementById('daily-list');
+            list.innerHTML = '';
+            const dateKey = getFormattedDate(currentDate);
+            
+            if (meds.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-20">
+                        <div class="bg-teal-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-teal-100">
+                            <i class="fas fa-pills text-teal-300 text-3xl"></i>
+                        </div>
+                        <p class="text-slate-400 font-bold">目前沒有藥品資料</p>
+                        <button onclick="toggleView('settings')" class="mt-4 text-teal-600 font-bold">前往設定藥品 →</button>
+                    </div>`;
+                return;
+            }
+
+            meds.forEach(med => {
+                for (let i = 0; i < med.freq; i++) {
+                    const record = records.find(r => r.date === dateKey && r.medId === med.id && r.doseIndex === i);
+                    const isTaken = !!record;
+                    
+                    const card = document.createElement('div');
+                    card.className = `pill-card flex items-center p-4 rounded-2xl shadow-sm border-2 transition-all duration-300 ${isTaken ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-teal-100/50'}`;
+                    
+                    card.innerHTML = `
+                        <div class="flex-grow">
+                            <div class="flex items-center flex-wrap gap-2">
+                                <span class="font-bold text-xl text-slate-800">${med.name}</span>
+                                <span class="text-xs px-2 py-1 rounded-full font-bold ${isTaken ? 'bg-emerald-200 text-emerald-700' : 'bg-teal-100 text-teal-600'}">
+                                    第 ${i + 1} 次 / ${med.timing}
+                                </span>
+                            </div>
+                            <div class="mt-1 text-slate-500 font-bold">
+                                劑量：${med.qty} ${med.unit} 
+                                ${isTaken ? `<span class="ml-2 text-emerald-600"><i class="fas fa-clock mr-1"></i>${record.time} 已服</span>` : '<span class="ml-2 text-rose-400 italic font-normal">待服藥</span>'}
+                            </div>
+                        </div>
+                        <button onclick="toggleRecord('${med.id}', ${i})" class="w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm transition-all ${isTaken ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400 active:bg-teal-200'}">
+                            <i class="fas ${isTaken ? 'fa-check' : 'fa-plus'} text-2xl"></i>
+                        </button>
+                    `;
+                    list.appendChild(card);
+                }
+            });
+        }
+
+        function renderSettings() {
+            const list = document.getElementById('med-list');
+            list.innerHTML = '';
+            
+            if (meds.length === 0) {
+                list.innerHTML = `<div class="text-center py-10 text-slate-400">尚未建立清單</div>`;
+                return;
+            }
+
+            meds.forEach(med => {
+                const item = document.createElement('div');
+                item.className = 'bg-white p-5 rounded-2xl border border-slate-200 flex justify-between items-center shadow-sm';
+                item.innerHTML = `
+                    <div>
+                        <div class="font-bold text-xl text-slate-800">${med.name}</div>
+                        <div class="text-sm text-slate-500 font-bold mt-1">
+                            <span class="text-teal-600">${med.timing}</span> · 每天 ${med.freq} 次 · 每次 ${med.qty} ${med.unit}
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="editMed('${med.id}')" class="w-11 h-11 text-teal-600 bg-teal-50 rounded-xl flex items-center justify-center active:bg-teal-100 transition"><i class="fas fa-edit"></i></button>
+                        <button onclick="confirmDeleteMed('${med.id}')" class="w-11 h-11 text-rose-600 bg-rose-50 rounded-xl flex items-center justify-center active:bg-rose-100 transition"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        // --- 動作邏輯 ---
+        function toggleRecord(medId, doseIndex) {
+            const dateKey = getFormattedDate(currentDate);
+            const index = records.findIndex(r => r.date === dateKey && r.medId === medId && r.doseIndex === doseIndex);
+            
+            if (index > -1) {
+                records.splice(index, 1);
+                showToast("✅ 已取消紀錄");
+            } else {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+                records.push({ date: dateKey, medId: medId, doseIndex: doseIndex, time: timeStr });
+                showToast("💊 已記錄服藥時間");
+            }
+            saveToStorage();
+            render();
+        }
+
+        function openMedModal(id = null) {
+            editingId = id;
+            if (id) {
+                const med = meds.find(m => m.id === id);
+                document.getElementById('input-name').value = med.name;
+                document.getElementById('input-qty').value = med.qty;
+                document.getElementById('input-unit').value = med.unit;
+                document.getElementById('input-timing').value = med.timing;
+                document.getElementById('input-freq').value = med.freq;
+            } else {
+                document.getElementById('input-name').value = '';
+                document.getElementById('input-qty').value = 1;
+            }
+            document.getElementById('med-modal').classList.remove('hidden');
+        }
+
+        function closeMedModal() {
+            document.getElementById('med-modal').classList.add('hidden');
+            editingId = null;
+        }
+
+        function saveMedication() {
+            const name = document.getElementById('input-name').value.trim();
+            if (!name) return showToast("請輸入藥名");
+
+            const medData = {
+                id: editingId || Date.now().toString(),
+                name: name,
+                qty: document.getElementById('input-qty').value,
+                unit: document.getElementById('input-unit').value,
+                timing: document.getElementById('input-timing').value,
+                freq: parseInt(document.getElementById('input-freq').value)
+            };
+
+            if (editingId) {
+                const idx = meds.findIndex(m => m.id === editingId);
+                meds[idx] = medData;
+            } else {
+                meds.push(medData);
+            }
+
+            saveToStorage();
+            closeMedModal();
+            render();
+            showToast("✅ 藥品設定成功");
+        }
+
+        function confirmDeleteMed(id) {
+            pendingDeleteId = id;
+            document.getElementById('delete-modal').classList.remove('hidden');
+            
+            const confirmBtn = document.getElementById('confirm-delete-btn');
+            confirmBtn.onclick = () => {
+                meds = meds.filter(m => m.id !== pendingDeleteId);
+                saveToStorage();
+                closeDeleteModal();
+                render();
+                showToast("🗑️ 已刪除藥品");
+            };
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.add('hidden');
+            pendingDeleteId = null;
+        }
+
+        function editMed(id) {
+            openMedModal(id);
+        }
+
+        // --- 匯入/匯出 ---
+        function exportData() {
+            const data = {
+                meds: meds,
+                records: records,
+                exportAt: new Date().toISOString(),
+                version: "1.0"
+            };
+            const dataStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `樂齡用藥紀錄備份_${getFormattedDate(new Date())}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+            showToast("📤 備份檔下載中");
+        }
+
+        function handleImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (importedData.meds && Array.isArray(importedData.meds)) {
+                        meds = importedData.meds;
+                        records = importedData.records || [];
+                        saveToStorage();
+                        showToast("📥 資料匯入成功！");
+                        toggleView('daily');
+                    } else {
+                        throw new Error("格式錯誤");
+                    }
+                } catch (err) {
+                    showToast("❌ 檔案格式不正確");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
