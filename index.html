@@ -166,28 +166,37 @@
             </div>
         </div>
 
+        <!-- 修改服藥時間彈窗 -->
+        <div id="time-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+                <div class="bg-slate-50 p-4 border-b flex justify-between items-center text-slate-700">
+                    <h3 class="font-bold text-lg">修改服藥時間</h3>
+                    <button onclick="closeTimeModal()"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-6 space-y-5 text-center">
+                    <p class="text-slate-500 text-sm">請選擇正確的服用時間：</p>
+                    <input type="time" id="input-edit-time" class="w-full border-2 p-4 rounded-2xl text-3xl text-center focus:border-teal-400 outline-none bg-slate-50">
+                </div>
+                <div class="p-4 bg-slate-50 flex space-x-3">
+                    <button onclick="closeTimeModal()" class="flex-grow py-4 border-2 rounded-2xl font-bold text-slate-500">取消</button>
+                    <button onclick="updateRecordTime()" class="flex-grow py-4 bg-teal-600 text-white rounded-2xl font-bold shadow-lg">確認修改</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 提示訊息 -->
         <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white px-8 py-3 rounded-full text-base font-bold opacity-0 transition-opacity pointer-events-none z-50 shadow-lg">已完成</div>
     </div>
 
     <script>
-        // PWA Service Worker 註冊與修正
+        // PWA Service Worker 註冊
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                // 加入環境判斷，防止在非標準協議下報錯
                 const isSupportedProtocol = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                
                 if (isSupportedProtocol) {
                     navigator.serviceWorker.register('./sw.js')
                         .then(reg => console.log('PWA SW Registered'))
-                        .catch(err => {
-                            // 靜默處理預覽環境下的特殊錯誤
-                            if (err.name !== 'SecurityError') {
-                                console.error('PWA SW Failed', err);
-                            }
-                        });
-                } else {
-                    console.log('當前協議不支援 Service Worker (需為 HTTPS 或 localhost)，但 App 仍可離線存取 localStorage。');
+                        .catch(err => { if (err.name !== 'SecurityError') console.error('PWA SW Failed', err); });
                 }
             });
         }
@@ -204,15 +213,32 @@
         let meds = JSON.parse(localStorage.getItem('elderly_meds')) || [];
         let records = JSON.parse(localStorage.getItem('elderly_records')) || [];
         let currentDate = new Date();
+        let lastCheckedDate = new Date().toDateString(); // 用於跨天偵測
         let currentView = 'daily';
         let editingId = null;
         let pendingDeleteId = null;
+        let pendingTimeEdit = null; // 存放待修改時間的資訊 {medId, doseIndex, date}
 
         window.onload = () => {
             updateStatus();
             updateDateDisplay();
             render();
+            // 每分鐘檢查一次是否跨過凌晨 12 點
+            setInterval(checkMidnightReset, 60000);
         };
+
+        // 跨午夜偵測邏輯
+        function checkMidnightReset() {
+            const now = new Date();
+            if (now.toDateString() !== lastCheckedDate) {
+                lastCheckedDate = now.toDateString();
+                // 如果目前是在看當日列表，自動跳轉到新的一天
+                currentDate = new Date();
+                updateDateDisplay();
+                render();
+                showToast("📅 已自動重置至今日用藥清單");
+            }
+        }
 
         function saveToStorage() {
             localStorage.setItem('elderly_meds', JSON.stringify(meds));
@@ -269,6 +295,14 @@
                     const isTaken = !!record;
                     const card = document.createElement('div');
                     card.className = `pill-card flex items-center p-4 rounded-2xl shadow-sm border-2 transition-all ${isTaken ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-teal-100/50'}`;
+                    
+                    // 修改時間的 HTML
+                    const timeDisplay = isTaken ? 
+                        `<span onclick="openTimeModal('${med.id}', ${i}, '${dateKey}', '${record.time}')" class="ml-1 text-emerald-600 underline decoration-dotted underline-offset-4 cursor-pointer">
+                            <i class="fas fa-check-circle mr-1"></i>於 ${record.time} 服用
+                         </span>` : 
+                        `<span class="ml-2 text-rose-400 italic font-normal">尚未服用</span>`;
+
                     card.innerHTML = `
                         <div class="flex-grow">
                             <div class="flex items-center gap-2">
@@ -276,7 +310,7 @@
                                 <span class="text-xs px-2 py-1 rounded-full font-bold ${isTaken ? 'bg-emerald-200 text-emerald-700' : 'bg-teal-100 text-teal-600'}">第 ${i+1} 次 / ${med.timing}</span>
                             </div>
                             <div class="mt-1 text-slate-500 font-bold text-sm">
-                                每次 ${med.qty}${med.unit} ${isTaken ? `<span class="ml-2 text-emerald-600"><i class="fas fa-check-circle mr-1"></i>於 ${record.time} 服用</span>` : '<span class="ml-2 text-rose-400 italic font-normal">尚未服用</span>'}
+                                每次 ${med.qty}${med.unit} ${timeDisplay}
                             </div>
                         </div>
                         <button onclick="toggleRecord('${med.id}', ${i})" class="w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm transition-all ${isTaken ? 'bg-emerald-500 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-400'}">
@@ -322,11 +356,9 @@
         function moveMed(index, direction) {
             const targetIndex = index + direction;
             if (targetIndex < 0 || targetIndex >= meds.length) return;
-            
             const temp = meds[index];
             meds[index] = meds[targetIndex];
             meds[targetIndex] = temp;
-            
             saveToStorage();
             renderSettings();
             showToast("已調整順序");
@@ -345,6 +377,40 @@
                 showToast("💊 服藥紀錄成功");
             }
             saveToStorage(); render();
+        }
+
+        // 修改時間專用 Modal
+        function openTimeModal(medId, doseIndex, date, currentTime) {
+            pendingTimeEdit = { medId, doseIndex, date };
+            document.getElementById('input-edit-time').value = currentTime;
+            document.getElementById('time-modal').classList.remove('hidden');
+            // 防止點擊時間觸發外層的 toggleRecord
+            event.stopPropagation();
+        }
+
+        function closeTimeModal() {
+            document.getElementById('time-modal').classList.add('hidden');
+            pendingTimeEdit = null;
+        }
+
+        function updateRecordTime() {
+            if (!pendingTimeEdit) return;
+            const newTime = document.getElementById('input-edit-time').value;
+            if (!newTime) return;
+
+            const idx = records.findIndex(r => 
+                r.date === pendingTimeEdit.date && 
+                r.medId === pendingTimeEdit.medId && 
+                r.doseIndex === pendingTimeEdit.doseIndex
+            );
+
+            if (idx > -1) {
+                records[idx].time = newTime;
+                saveToStorage();
+                renderDaily();
+                showToast("✅ 服藥時間已更新");
+            }
+            closeTimeModal();
         }
 
         function openMedModal(id = null) {
